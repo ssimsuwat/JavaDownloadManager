@@ -27,7 +27,7 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 	protected String protocol = "";	
 
 	// Max size of download buffer.
-	public static final int MAX_BUFFER_SIZE = 1024;
+	public static final int MAX_BUFFER_SIZE = 4096;
 
 	// These are the status names.
 	public static final String STATUSES[] = { "Downloading", "Paused", "Complete", "Cancelled", "Error" };
@@ -68,7 +68,7 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 			// load a properties file
 			prop.load(input);
 			// get the property value and print it out
-			System.out.println("BASE.DOWNLOAD.PATH:"+prop.getProperty("BASE.DOWNLOAD.PATH"));			
+			log.info("BASE.DOWNLOAD.PATH:"+prop.getProperty("BASE.DOWNLOAD.PATH"));			
 
 		} catch (IOException ex) {
 			ex.printStackTrace();
@@ -224,38 +224,6 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 	protected boolean checkDiskFreeSpaceForFile(long machineSpache, long fileSize) {
 		boolean isDiskSpaceEnough =  (machineSpache>fileSize)? true: false;
 		return isDiskSpaceEnough;		
-	}
-	
-	protected void writeFile(InputStream inputStream, String destDirectory, String file, boolean append) {
-		FileOutputStream fileOutputStream = null;
-		CountingOutputStream cos = null;
-		try {
-			fileOutputStream = new FileOutputStream(destDirectory + "/" + file, append);
-
-			cos = new CountingOutputStream(fileOutputStream) {
-				protected void beforeWrite(int n) {
-					super.beforeWrite(n);
-					downloaded = getByteCount();
-					stateChanged();
-				}
-			};
-
-			IOUtils.copy(inputStream, cos);
-			cos.flush();			
-		} catch (FileNotFoundException e) {			
-			e.printStackTrace();
-			log.error(e.getMessage());
-			error();
-		} catch (IOException e) {			
-			e.printStackTrace();
-			log.error(e.getMessage());
-			error();
-		} finally {
-			IOUtils.closeQuietly(cos);
-			IOUtils.closeQuietly(fileOutputStream);
-			IOUtils.closeQuietly(inputStream);
-		}
-	}
-	
+	}	
 	
 }
