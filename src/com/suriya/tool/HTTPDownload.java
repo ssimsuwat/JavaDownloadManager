@@ -10,8 +10,8 @@ class HTTPDownload extends SimpleDownload {
 
 	final static Logger log = Logger.getLogger(HTTPDownload.class);
 	
-	public HTTPDownload(URL url) {
-		super(url);		
+	public HTTPDownload(URI uri) {
+		super(uri);		
 	}
 
 	// Download file.
@@ -20,12 +20,13 @@ class HTTPDownload extends SimpleDownload {
 		InputStream stream = null;
 
 		try {
-			String fileName = getFileName(url);
+			String fileName = getFileName(uri);
 			String directoryName = getDownloadPath();			
 			createDownloadPath(directoryName);
-		    log.info("Downloading the file:"+fileName); 
+		    log.info("Downloading the file:"+fileName+", URL:"+getUrl()+", dest directoryName"+directoryName); 
 			
 			// Open connection to URL.
+		    URL url = new URL(getUrl());
 			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
 			// Specify what portion of file to download.
