@@ -3,12 +3,17 @@ package com.suriya.tool;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.net.SocketException;
 import java.net.URI;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.output.CountingOutputStream;
 import org.apache.commons.net.ftp.FTP;
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
@@ -55,12 +60,16 @@ public class FTPDownload extends SimpleDownload {
 
 	public void run() {
 
-		String fileName = getFileName(uri);
-		String directoryName = getDownloadPath();
-		createDownloadPath(directoryName);
+		RandomAccessFile file = null;
+		InputStream stream = null;	
 		String errorMsg = "";
 		
 		try {
+			String fileName = getFileName(uri);
+			String directoryName = getDownloadPath();			
+			createDownloadPath(directoryName);
+		    log.info("Downloading the file:"+fileName+", URL:"+getUrl()+", dest directoryName"+directoryName); 
+			
 			connect();
 			long contentLength = 0;
 			try {
@@ -72,18 +81,18 @@ public class FTPDownload extends SimpleDownload {
 				DownloadManager.showErrorMessage(errorMsg);
 				error();
 				disconnect(ftpClient);
+				return;
 			}
 
-			if (contentLength == 0) {
-				errorMsg = "The size of remote file (" + fileName+ ") is 0. Please check the remote source file again.";
-				log.error(errorMsg);
-				DownloadManager.showErrorMessage(errorMsg);
-				error();
-				disconnect(ftpClient);
+			// Set the size for this download if it hasn't been already set.
+			if (size == -1) {
+				size = contentLength;
+				stateChanged();
 			}
-
-			File currentLocalFile = new File(directoryName, fileName);
-
+			
+			File currentLocalFile = new File(directoryName, fileName);          
+			
+			//Logic for retrieving the MD5 takes time to process when the file size is very big. Speed to download will be fast, if disable this feature.
 			InputStream remoteFileIs = ftpClient.retrieveFileStream(fileName);
 			String remoteFileMD5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(remoteFileIs);
 			remoteFileIs.close();
@@ -105,18 +114,11 @@ public class FTPDownload extends SimpleDownload {
 				DownloadManager.showErrorMessage(errorMsg);
 				status = COMPLETE;
 				stateChanged();
-			}
-
+				return;
+			}            
+         
 			// Set the local file length
-			long offset = currentLocalFile.exists() ? currentLocalFile.length() : 0;
-
-			// Set the size for this download if it hasn't been already set.
-			if (size == -1) {
-				size = contentLength;
-				stateChanged();
-			}
-
-			log.info("File:" + fileName + ", size:" + contentLength);
+			long offset = currentLocalFile.exists() ? currentLocalFile.length() : 0;			
 
 			// long assumeDiskSpaceSize = 100000L;
 
@@ -128,36 +130,62 @@ public class FTPDownload extends SimpleDownload {
 				log.error(errorMsg);
 				DownloadManager.showErrorMessage(errorMsg);
 				error();
+				return;
+			}		
+
+			if(offset>0) {
+				downloaded = offset;
+				stateChanged();
 			}
 			
-			boolean append = false;
+			// Open file and seek to the end of it.
+			file = new RandomAccessFile(directoryName+File.separator+fileName, "rw");
+			file.seek(downloaded);						
+		
+			connect();			
+			stream = retrieveFileStream(ftpClient, fileName, offset);
+			log.info("Downloading the file:" + fileName + " from server:" + getServer() + ", with user:" + getUser()+", current status:"+status);
+			while (status == DOWNLOADING) {			
 			
-			if (offset != 0 && offset != size) {				
-				append = true;
-			}
-
-			boolean downloadFileSuccess = false;
-
-			while (status == DOWNLOADING) {
-				log.info("Downloading the file:" + fileName + " from server:" + getServer() + ", with user:" + getUser()+ ".");
-				connect();
-				InputStream inputStream = retrieveFileStream(ftpClient, fileName, offset);
-				writeFile(inputStream, directoryName, fileName, append);
-
-				downloadFileSuccess = ftpClient.completePendingCommand();
-				if (downloadFileSuccess) {
-					log.info("The file " + fileName + " has been downloaded successfully.");
-					status = COMPLETE;
-					stateChanged();
+				byte buffer[];
+				if (size - downloaded > MAX_BUFFER_SIZE) {
+					buffer = new byte[MAX_BUFFER_SIZE];
 				} else {
-					error();
+					buffer = new byte[(int) (size - downloaded)];
 				}
-			}
+
+				// Read from server into buffer.
+				int read = stream.read(buffer);
+				if (read == 0) 
+					break;
+				
+				// Write buffer to file.
+				file.write(buffer, 0, read);				
+				downloaded += read;
+				stateChanged();			
+			}		
+					
+			/*
+			 * Change status to complete if this point was reached because
+			 * downloading has finished.
+			 */
+			if (status == DOWNLOADING) {
+				status = COMPLETE;
+				stateChanged();
+			}	
+			log.info("Finish downloading the file: " + directoryName + File.separator + fileName);
 		} catch (IOException ex) {
 			log.error("Error: " + ex.getMessage());
 			ex.printStackTrace();
 			error();
 		} finally {
+			// Close file.
+			if (file != null) {
+				try {
+					file.close();
+				} catch (Exception e) {
+				}
+			}			
 			disconnect(ftpClient);
 		}
 	}
