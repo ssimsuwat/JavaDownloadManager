@@ -2,16 +2,10 @@ package com.suriya.tool;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.net.URI;
-import java.net.URL;
-
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.io.output.CountingOutputStream;
-import org.apache.commons.net.ftp.FTPClient;
 import org.apache.log4j.Logger;
 
 import com.jcraft.jsch.Channel;
@@ -55,13 +49,15 @@ public class SFTPDownload extends SimpleDownload {
 
 	public void run() {
 
-		String fileName = getFileName(uri);
-		String directoryName = getDownloadPath();
-		createDownloadPath(directoryName);
+		RandomAccessFile file = null;
+		InputStream stream = null;	
 		String errorMsg = "";
-		System.out.println("Server:" + server + ", user:" + user + ", pass:" + pass);
+			
 		try {
-
+			String fileName = getFileName(uri);
+			String directoryName = getDownloadPath();
+			createDownloadPath(directoryName);
+			
 			connect();
 			long contentLength = 0L;
 
@@ -69,24 +65,17 @@ public class SFTPDownload extends SimpleDownload {
 				contentLength = channelSftp.lstat(fileName).getSize();
 				log.info("File:" + fileName + ", size:" + contentLength);
 			} catch (Exception e) {
-				errorMsg = "Not able to get the size of remote file (" + fileName + ") with the error: "
-						+ e.getMessage();
+				errorMsg = "Not able to get the size of remote file (" + fileName + ") with the error: "+ e.getMessage();
 				log.error(errorMsg);
 				DownloadManager.showErrorMessage(errorMsg);
 				error();
 				disconnect(session, channelSftp);
-			}
-
-			// Check for valid content length.
-			if (contentLength == 0) {
-				errorMsg = "The size of remote file (" + fileName+ ") is 0. Please check the remote source file again.";
-				log.error(errorMsg);
-				DownloadManager.showErrorMessage(errorMsg);
-				error();
-				disconnect(session, channelSftp);
-			}
+				return;
+			}	
 
 			File currentLocalFile = new File(directoryName, fileName);
+			
+			//The code to get the MD5 from server server and local
 			InputStream remoteFileIs = channelSftp.get(fileName);
 			String remoteFileMD5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(remoteFileIs);
 			remoteFileIs.close();
@@ -108,8 +97,9 @@ public class SFTPDownload extends SimpleDownload {
 				DownloadManager.showErrorMessage(errorMsg);
 				status = COMPLETE;
 				stateChanged();
+				return;
 			}
-
+            			
 			// Set the local file length
 			long offset = currentLocalFile.exists() ? currentLocalFile.length() : 0;
 
@@ -127,34 +117,60 @@ public class SFTPDownload extends SimpleDownload {
 				log.error(errorMsg);
 				DownloadManager.showErrorMessage(errorMsg);
 				error();
+				return;
 			}
 
-			int mode = 0;
-			boolean append = false;
-			if (offset == 0) {
-				mode = ChannelSftp.OVERWRITE;
-			} else if (offset < size) {
-				mode = ChannelSftp.RESUME;
-				append = true;
+			if(offset>0) {
+				downloaded = offset;
+				stateChanged();
 			}
+					
+			file = new RandomAccessFile(directoryName+File.separator+fileName, "rw");
+			file.seek(downloaded);
 
-			while (status == DOWNLOADING) {
-				log.info("Downloading the file:" + fileName + " from server:" + getServer() + ", with user:" + getUser()
-						+ ".");
-				connect();
-				InputStream inputStream = channelSftp.get(fileName, mode);
-				writeFile(inputStream, directoryName, fileName, append);
-
-				if (status == DOWNLOADING) {
-					status = COMPLETE;
-					stateChanged();
+			connect();
+			InputStream inputStream = channelSftp.get(fileName);
+			log.info("Downloading the file:" + fileName + " from server:" + getServer() + ", with user:" + getUser());
+			while (status == DOWNLOADING) {				
+			
+				byte buffer[];
+				if (size - downloaded > MAX_BUFFER_SIZE) {
+					buffer = new byte[MAX_BUFFER_SIZE];
+				} else {
+					buffer = new byte[(int) (size - downloaded)];
 				}
-				log.info("Finish downloading the file: " + directoryName + File.separator + fileName);
+
+				// Read from server into buffer.
+				int read = inputStream.read(buffer);			
+				if (read == 0)
+					break;
+
+				// Write buffer to file.
+				file.write(buffer, 0, read);
+				downloaded += read;
+				stateChanged();					
 			}
+			
+			/*
+			 * Change status to complete if this point was reached because
+			 * downloading has finished.
+			 */
+			if (status == DOWNLOADING) {
+				status = COMPLETE;
+				stateChanged();
+			}			
+			log.info("Finish downloading the file: " + directoryName + File.separator + fileName);
 		} catch (Exception ex) {
 			ex.printStackTrace();
 			error();
 		} finally {
+			// Close file.
+			if (file != null) {
+				try {
+					file.close();
+				} catch (Exception e) {
+				}
+			}
 			disconnect(session, channelSftp);
 		}
 	}
