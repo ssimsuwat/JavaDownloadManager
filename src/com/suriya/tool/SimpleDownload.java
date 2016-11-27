@@ -6,7 +6,9 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.util.Observable;
 import java.util.Properties;
 
@@ -22,6 +24,7 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 	protected String user = "";
 	protected String pass = "";
 	protected String server = "";	
+	protected String protocol = "";	
 
 	// Max size of download buffer.
 	public static final int MAX_BUFFER_SIZE = 1024;
@@ -36,7 +39,7 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 	public static final int CANCELLED = 3;
 	public static final int ERROR = 4;
 
-	protected URL url; // download URL
+	protected URI uri; // download URL
 	protected long size; // size of download in bytes
 	protected long downloaded; // number of bytes downloaded
 	protected int status; // current status of download
@@ -45,8 +48,8 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 	protected Properties systemProp = null;
 			
 	// Constructor for Download.
-	public SimpleDownload(URL url) {
-		this.url = url;
+	public SimpleDownload(URI uri) {
+		this.uri = uri;
 		size = -1;
 		downloaded = 0L;
 		status = DOWNLOADING;
@@ -91,9 +94,10 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 	public void createDownloadPath(String downloadPath) {
 		File tempDir = new File(downloadPath);
 		try {
-			FileUtils.forceMkdir(tempDir);
+			if(!tempDir.exists())
+				FileUtils.forceMkdir(tempDir);
 		} catch (IOException e) {
-			log.error("Error when trying to create sub download path"+e);
+			log.error("Error when trying to create sub download path:"+e);
 			e.printStackTrace();
 		}
 	}
@@ -111,10 +115,8 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 	}
 	
 	// Get this download's URL.
-	public String getUrl() {
-		String protocol = url.getProtocol();
-		String currentUrl = url.toString();
-		
+	public String getUrl() {		
+		String currentUrl = uri.toString();		
 		if ((protocol.equals("sftp") || protocol.equals("ftp")) && currentUrl.contains(",")) {
 			String[] tempUrl = currentUrl.split(",");  
 			currentUrl = tempUrl[0];
@@ -181,21 +183,25 @@ public abstract class SimpleDownload extends Observable implements Runnable {
 		thread.start();
 	}
 
-	// Get file name portion of URL.
-	protected String getFileName(URL url) {
-
-		String protocol = url.getProtocol();
-		String fileName = url.getFile().replace("/", "");		
-		server = url.getHost();
-		log.debug("protocol: " + protocol);
-		log.debug("fileName: " + url.getFile());
+	// Get file name portion of URI.
+	protected String getFileName(URI uri) {		
+		
+		this.protocol = uri.toString().substring(0, uri.toString().indexOf("://"));
+		//String tempFile = URLDecoder.decode(uri.getPath());
+		String tempFile = uri.getPath();
+		String fileName = tempFile.substring(tempFile.lastIndexOf("/"), tempFile.length()).substring(1);
+		this.server = uri.getHost();			
+		
+		server = uri.getHost();
+		log.debug("protocol: " + protocol);	
+		log.debug("tempFile: " + tempFile+", fileName: "+fileName);	
 		
 		if ((protocol.equals("sftp") || protocol.equals("ftp")) && fileName.contains(",")) {
 			String[] temp = fileName.split(",");
 			if (temp != null) {
 				fileName = temp[0];
-				user = temp[1];
-				pass = temp[2];
+				this.user = temp[1];
+				this.pass = temp[2];
 				
 				log.debug("fileName: " + fileName);
 				log.debug("user: " + user);
