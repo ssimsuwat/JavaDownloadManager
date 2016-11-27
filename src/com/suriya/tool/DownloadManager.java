@@ -2,11 +2,7 @@ package com.suriya.tool;
 
 import java.awt.*;
 import java.awt.event.*;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.lang.reflect.Field;
 import java.net.*;
-import java.nio.file.FileSystem;
 import java.util.*;
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -255,9 +251,13 @@ public class DownloadManager extends JFrame implements Observer {
 		 * download and register to receive notifications from it.
 		 */
 		if (!clearing) {
-			selectedDownload = tableModel.getDownload(table.getSelectedRow());
-			selectedDownload.addObserver(DownloadManager.this);
-			updateButtons();
+			int currentRow = table.getSelectedRow();
+			log.debug("currentRow:"+currentRow);
+			if(currentRow>=0) {
+				selectedDownload = tableModel.getDownload(table.getSelectedRow());		
+				selectedDownload.addObserver(DownloadManager.this);
+				updateButtons();
+			}	
 		}
 	}
 
